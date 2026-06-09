@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.gitignore
+*.log
+npm-debug.log*
+# never bake secrets or generated seed data into the image
+secrets
+generated
+seed-data
+*.csv
+.env
+.env.local
