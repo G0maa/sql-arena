@@ -21,3 +21,14 @@ npm-debug.log*
 
 # Test / coverage
 coverage/
+
+# Generated seed data — faker CSVs are large and regenerated on the server
+# (they double as the reset baseline). Never committed.
+*.csv
+/generated/
+/seed-data/
+
+# Secrets — reference queries + golden answers must never be committed.
+# The *.example templates are the only tracked files under secrets/.
+/secrets/*
+!/secrets/*.example
