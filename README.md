@@ -57,6 +57,7 @@ Useful scripts:
 | `npm run typecheck` | Type-check without emitting |
 | `npm run lint` | ESLint over `src/` |
 | `npm run db:bootstrap` | (Re)apply the schema/roles to an existing DB (see below) |
+| `npm run db:seed` | Generate faker CSVs and load them into the `seed` schema (see below) |
 
 ## Database bootstrap
 
@@ -90,6 +91,35 @@ What it creates:
 > `arena_runner` rather than merely granted to it. A PG16 data volume won't start under
 > PG18 — use `docker compose down -v` when upgrading an existing local volume.
 
+## Seeding the dataset
+
+The `seed` tables are filled by a two-step flow (AgDR-0005 / AgDR-0007):
+
+```bash
+npm run db:seed              # generate CSVs, then load them
+# or run the halves separately:
+npm run db:seed:generate     # faker → generated/*.csv  (no DB needed)
+npm run db:seed:load         # server-side COPY into the seed schema
+```
+
+- **Generate** streams five CSVs to `generated/` with sequential integer IDs. Defaults are **full
+  target scale** (~100 categories / 1M customers / 100k products / 1M orders → ~3M order-details) —
+  dial them **down** for a quick local check via env knobs (see `.env.example`):
+
+  ```bash
+  SEED_CATEGORIES=20 SEED_CUSTOMERS=2000 SEED_PRODUCTS=500 SEED_ORDERS=1000 npm run db:seed:generate
+  ```
+
+  A fixed `SEED_RANDOM` (default 42) makes generation deterministic — same knobs → identical CSVs.
+
+- **Load** runs Postgres **server-side `COPY … FROM '/seed-data/x.csv'`** as plain SQL through the
+  existing `pg` client (fastest path, no extra dependency). `docker-compose.yml` mounts `./generated`
+  into the container at `/seed-data`, so generate on the host, then load. It TRUNCATEs first, so it's
+  idempotent. The connecting role needs `pg_read_server_files` (the dev `arena` superuser qualifies).
+
+The CSVs are large and gitignored; they double as the **per-submission reset baseline** (AgDR-0004),
+and `loadSeed()` is the exact path the Step-5 reset will reuse.
+
 ## Secrets & seed data (not committed)
 
 - **Reference queries / golden answers** live in `secrets/reference_queries.sql`
@@ -101,10 +131,10 @@ What it creates:
 
 ## Status
 
-**Step 2 of 8 — DB bootstrap.** On top of the Step 1 scaffold (NestJS + Kysely/pg,
-Docker Compose, `/health`): the `seed` + `app` schemas, the two roles with the
-isolation boundary between them, and the typed Kysely schema (`src/database/types.ts`).
-Seeding, the submission runner, the API, and the UI land in subsequent steps.
+**Step 3 of 8 — Seeding.** On top of the Step 2 schema (seed + app schemas, roles, isolation):
+a faker CSV generator (`src/seed/generate.ts`) and a server-side `COPY` loader
+(`src/seed/load.ts`) that fill the `seed` dataset and leave the CSVs as the per-submission reset
+baseline. The submission runner, the API, and the UI land in subsequent steps.
 
 Design docs (in the ApexYard ops repo):
 
