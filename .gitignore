@@ -19,6 +19,9 @@ npm-debug.log*
 .idea/
 .vscode/
 
+# Claude Code session artifacts (active-ticket markers, pending reviews, etc.)
+.claude/session/
+
 # Test / coverage
 coverage/
 
