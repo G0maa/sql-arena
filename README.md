@@ -58,6 +58,7 @@ Useful scripts:
 | `npm run lint` | ESLint over `src/` |
 | `npm run db:bootstrap` | (Re)apply the schema/roles to an existing DB (see below) |
 | `npm run db:seed` | Generate faker CSVs and load them into the `seed` schema (see below) |
+| `npm run db:questions` | Load Q5–Q9 metadata + golden results into `app.questions` (see below) |
 
 ## Database bootstrap
 
@@ -120,6 +121,28 @@ npm run db:seed:load         # server-side COPY into the seed schema
 The CSVs are large and gitignored; they double as the **per-submission reset baseline** (AgDR-0004),
 and `loadSeed()` is the exact path the Step-5 reset will reuse.
 
+## Loading questions + golden results
+
+With the `seed` schema populated, load the five challenge questions:
+
+```bash
+# 1. Provision the reference queries (gitignored — server/dev only)
+cp secrets/reference_queries.sql.example secrets/reference_queries.sql
+# Fill in the real queries for Q5–Q9 following the `-- Q<n>:` header format.
+
+# 2. Run the loader
+npm run db:questions
+```
+
+The loader (`src/seed/load-questions.ts`, AgDR-0008) reads the committed
+question metadata from `src/seed/questions.ts`, runs each reference query
+against the `seed` schema, normalises the result via `src/grading/normalise.ts`,
+and upserts five rows into `app.questions`. It is idempotent — re-running after
+a data refresh or a reference-query change is safe.
+
+`SECRETS_DIR` (default `./secrets`) overrides the secrets directory when running
+the loader in a non-standard environment.
+
 ## Secrets & seed data (not committed)
 
 - **Reference queries / golden answers** live in `secrets/reference_queries.sql`
@@ -131,10 +154,12 @@ and `loadSeed()` is the exact path the Step-5 reset will reuse.
 
 ## Status
 
-**Step 3 of 8 — Seeding.** On top of the Step 2 schema (seed + app schemas, roles, isolation):
-a faker CSV generator (`src/seed/generate.ts`) and a server-side `COPY` loader
-(`src/seed/load.ts`) that fill the `seed` dataset and leave the CSVs as the per-submission reset
-baseline. The submission runner, the API, and the UI land in subsequent steps.
+**Step 4 of 8 — Question registry & golden results.** On top of the Step 3 seed loader:
+the committed question registry (`src/seed/questions.ts`), the shared normalisation module
+(`src/grading/normalise.ts`), and an idempotent loader (`src/seed/load-questions.ts`) that
+runs each reference query against `seed`, normalises the output, and stores it as
+`golden_result` in `app.questions`. The submission runner, the API, and the UI land in
+subsequent steps.
 
 Design docs (in the ApexYard ops repo):
 

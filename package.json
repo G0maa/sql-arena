@@ -18,6 +18,7 @@
     "db:seed:generate": "tsx src/seed/generate.ts",
     "db:seed:load": "tsx src/seed/load.ts",
     "db:seed": "npm run db:seed:generate && npm run db:seed:load",
+    "db:questions": "tsx src/seed/load-questions.ts",
     "test": "echo \"No tests yet — added alongside the runner in a later step\" && exit 0"
   },
   "dependencies": {
