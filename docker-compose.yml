@@ -33,6 +33,8 @@ services:
     build: .
     environment:
       DATABASE_URL: postgres://arena:arena@postgres:5432/sql_arena
+      RUNNER_DATABASE_URL: postgres://arena_runner:${ARENA_RUNNER_PASSWORD:-runner}@postgres:5432/sql_arena
+      RW_DATABASE_URL: postgres://arena_rw:${ARENA_RW_PASSWORD:-rw}@postgres:5432/sql_arena
       PORT: 3000
     ports:
       - '3000:3000'
