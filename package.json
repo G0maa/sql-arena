@@ -4,7 +4,7 @@
   "description": "SQL-optimization solution-runner + execution-time leaderboard",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "nest build",
@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
+    "db:bootstrap": "./db/00-bootstrap.sh",
     "test": "echo \"No tests yet — added alongside the runner in a later step\" && exit 0"
   },
   "dependencies": {

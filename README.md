@@ -14,7 +14,7 @@ gives the cohort one source of truth for "what's the fastest correct query for Q
 
 ## Stack
 
-- **NestJS** (Node 20 / TypeScript) — JSON API + static page serving, single process
+- **NestJS** (Node 22 / TypeScript) — JSON API + static page serving, single process
   (no clustering — the submission queue must have exactly one consumer)
 - **Kysely + `pg`** — typed SQL access to Postgres
 - **PostgreSQL** — seeded e-commerce dataset, reset to a pristine baseline per run
@@ -56,6 +56,39 @@ Useful scripts:
 | `npm run start:dev` | Run with watch/hot-reload |
 | `npm run typecheck` | Type-check without emitting |
 | `npm run lint` | ESLint over `src/` |
+| `npm run db:bootstrap` | (Re)apply the schema/roles to an existing DB (see below) |
+
+## Database bootstrap
+
+The DB structure lives as idempotent SQL under `db/` (AgDR-0006), not in a migration
+tool — the seed DDL is re-executed verbatim by the per-submission reset (AgDR-0004), so
+it has to be a standalone, re-runnable artefact.
+
+- **Fresh volume** — `db/00-bootstrap.sh` is mounted into the Postgres container's
+  `docker-entrypoint-initdb.d`, so `docker compose up` on an empty volume bootstraps the
+  schema automatically. (Only the top-level `.sh` is auto-run; the `db/sql/*.sql` it
+  includes are not run standalone by the entrypoint.)
+- **Existing DB** — `npm run db:bootstrap` re-applies the same SQL over `$DATABASE_URL`.
+  It is idempotent, so it's safe to re-run while iterating. (Requires a local `psql`
+  client; if you don't have one, run the script inside the container instead:
+  `docker compose exec postgres /docker-entrypoint-initdb.d/00-bootstrap.sh`.)
+
+What it creates:
+
+- **`seed` schema** — the e-commerce dataset under study: `category`, `product`,
+  `customer`, `orders`, `order_details`. **PK-only, no secondary indexes** — the
+  missing-index slowness is the whole point of the exercise.
+- **`app` schema** — tool state: `questions`, `submissions`, `leaderboard`.
+- **Two roles** — `arena_runner` (**owns** the `seed` tables so contestants can
+  `CREATE INDEX`; cannot reach `app`) and `arena_rw` (read/write on `app`; cannot reach
+  `seed`). The schema-level grants make the golden answers + board unreachable from
+  contestant submission SQL. Passwords are env-driven (`ARENA_RUNNER_PASSWORD` /
+  `ARENA_RW_PASSWORD`; dev defaults in `.env.example`).
+
+> **Postgres 18 note:** `CREATE INDEX` requires *table ownership* on PG 16/17/18 (the
+> PG17 `MAINTAIN` privilege does not cover it), which is why the seed tables are owned by
+> `arena_runner` rather than merely granted to it. A PG16 data volume won't start under
+> PG18 — use `docker compose down -v` when upgrading an existing local volume.
 
 ## Secrets & seed data (not committed)
 
@@ -68,10 +101,10 @@ Useful scripts:
 
 ## Status
 
-**Step 1 of 8 — repo scaffold.** Runnable skeleton: NestJS app + Kysely/pg wiring,
-Docker Compose (postgres + app), a placeholder static page, and a `/health` route
-that confirms the Postgres connection. Schema, seeding, the submission runner, the
-API, and the UI land in subsequent steps.
+**Step 2 of 8 — DB bootstrap.** On top of the Step 1 scaffold (NestJS + Kysely/pg,
+Docker Compose, `/health`): the `seed` + `app` schemas, the two roles with the
+isolation boundary between them, and the typed Kysely schema (`src/database/types.ts`).
+Seeding, the submission runner, the API, and the UI land in subsequent steps.
 
 Design docs (in the ApexYard ops repo):
 
