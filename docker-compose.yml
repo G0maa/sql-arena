@@ -20,6 +20,9 @@ services:
       # Auto-bootstrap schema/roles on a fresh volume. Only db/00-bootstrap.sh
       # is top-level, so the entrypoint runs it (not the ./sql includes) once.
       - ./db:/docker-entrypoint-initdb.d:ro
+      # Generated seed CSVs, readable by the server for server-side COPY
+      # (AgDR-0007): the loader runs `COPY seed.x FROM '/seed-data/x.csv'`.
+      - ./generated:/seed-data:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U arena -d sql_arena']
       interval: 5s

@@ -26,9 +26,12 @@ npm-debug.log*
 coverage/
 
 # Generated seed data — faker CSVs are large and regenerated on the server
-# (they double as the reset baseline). Never committed.
+# (they double as the reset baseline). Never committed. The dir itself is kept
+# (via .gitkeep) so the docker-compose `./generated:/seed-data` mount always has
+# a host-owned target and doesn't get auto-created root-owned.
 *.csv
-/generated/
+/generated/*
+!/generated/.gitkeep
 /seed-data/
 
 # Secrets — reference queries + golden answers must never be committed.
