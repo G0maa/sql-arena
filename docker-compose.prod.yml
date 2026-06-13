@@ -28,6 +28,11 @@ services:
     # db:questions) connect via 127.0.0.1, while staying off the public interface.
     ports:
       - '127.0.0.1:5432:5432'
+    # Postgres parallel workers put hash/sort segments in /dev/shm; Docker's 64MB
+    # default overflows on the heavy GROUP BY / multi-join golden queries
+    # ("could not resize shared memory segment ... No space left on device").
+    # 256MB is ample for this dataset and well within the 2G memory limit.
+    shm_size: 256mb
     # Tune Postgres to the 2 GB / 2 vCPU envelope (see limits below). A bounded
     # cache keeps timings comparable and disk-bound enough that an index visibly
     # beats a sequential scan — the arena's headline mechanic.
