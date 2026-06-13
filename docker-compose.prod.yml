@@ -1,0 +1,106 @@
+# Production stack for sql-arena (AgDR-0013).
+#
+# Differences from the dev docker-compose.yml:
+#   - Postgres is NOT published to the public internet (loopback bind only, for
+#     host-run seeding); the app is reachable ONLY through Caddy.
+#   - Caddy terminates TLS with automatic Let's Encrypt for sql-arena.gomaa.ovh.
+#   - Real role passwords come from a gitignored .env (see .env.production.example);
+#     there are no dev defaults here.
+#   - Postgres is resource-limited (2 vCPU / 2 GB) and tuned to that envelope so a
+#     contestant's heavy query can't OOM the box or starve the runner, and exec_ms
+#     stays comparable run-to-run.
+#
+# Usage (on the server, repo at /opt/sql-arena with .env + secrets/ in place):
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: arena
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: sql_arena
+      # Role passwords consumed by db/00-bootstrap.sh during initdb. Required —
+      # no dev fallback in production.
+      ARENA_RUNNER_PASSWORD: ${ARENA_RUNNER_PASSWORD:?set in .env}
+      ARENA_RW_PASSWORD: ${ARENA_RW_PASSWORD:?set in .env}
+    # Loopback-only publish: lets host-run seeders (npm run db:seed:load /
+    # db:questions) connect via 127.0.0.1, while staying off the public interface.
+    ports:
+      - '127.0.0.1:5432:5432'
+    # Postgres parallel workers put hash/sort segments in /dev/shm; Docker's 64MB
+    # default overflows on the heavy GROUP BY / multi-join golden queries
+    # ("could not resize shared memory segment ... No space left on device").
+    # 256MB is ample for this dataset and well within the 2G memory limit.
+    shm_size: 256mb
+    # Tune Postgres to the 2 GB / 2 vCPU envelope (see limits below). A bounded
+    # cache keeps timings comparable and disk-bound enough that an index visibly
+    # beats a sequential scan — the arena's headline mechanic.
+    command:
+      - postgres
+      - '-c'
+      - 'shared_buffers=512MB'
+      - '-c'
+      - 'effective_cache_size=1536MB'
+      - '-c'
+      - 'work_mem=16MB'
+      - '-c'
+      - 'maintenance_work_mem=128MB'
+      - '-c'
+      - 'max_connections=20'
+    volumes:
+      # PG18+ stores data in a major-version subdir; mount at /var/lib/postgresql.
+      - pgdata:/var/lib/postgresql
+      # Auto-bootstrap schema/roles on a fresh volume (only the top-level .sh runs).
+      - ./db:/docker-entrypoint-initdb.d:ro
+      # Generated full-scale seed CSVs for server-side COPY (AgDR-0007).
+      - ./generated:/seed-data:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U arena -d sql_arena']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://arena:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/sql_arena
+      RUNNER_DATABASE_URL: postgres://arena_runner:${ARENA_RUNNER_PASSWORD:?set in .env}@postgres:5432/sql_arena
+      RW_DATABASE_URL: postgres://arena_rw:${ARENA_RW_PASSWORD:?set in .env}@postgres:5432/sql_arena
+      PORT: 3000
+    # No public port — only Caddy reaches the app, over the compose network.
+    expose:
+      - '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # persists Let's Encrypt certs across restarts
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
