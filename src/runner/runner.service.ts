@@ -3,6 +3,7 @@ import {
   Logger,
   OnApplicationBootstrap,
   OnApplicationShutdown,
+  Optional,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { runJob, type JobInput, type QuestionMeta } from './job-runner';
@@ -27,8 +28,13 @@ export class RunnerService
 
   constructor(
     private readonly db: DatabaseService,
-    // Injected for unit-testability; production code uses the real runJob
-    private readonly _runJob: RunJobFn = runJob,
+    // Injected for unit-testability; production code uses the real runJob.
+    // @Optional() is REQUIRED: with emitDecoratorMetadata on, Nest sees this
+    // default-valued param as a `Function` dependency and tries to DI-resolve
+    // it — which has no provider and crashes app bootstrap. @Optional() tells
+    // the container to skip it so the default (`runJob`) applies. Regression
+    // guarded by runner.module.spec.ts.
+    @Optional() private readonly _runJob: RunJobFn = runJob,
   ) {}
 
   onApplicationBootstrap(): void {
