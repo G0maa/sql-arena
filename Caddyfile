@@ -1,0 +1,8 @@
+# Caddy reverse proxy for sql-arena (AgDR-0013).
+# Automatic HTTPS: Caddy provisions and renews a Let's Encrypt certificate for
+# the domain below (ports 80 + 443 published, DNS A record → this host). HTTP is
+# auto-redirected to HTTPS. The app listens on :3000 inside the compose network
+# and is never exposed directly.
+sql-arena.gomaa.ovh {
+	reverse_proxy app:3000
+}
