@@ -16,17 +16,18 @@ function makeDb(
 
 describe('ArenaService', () => {
   describe('listQuestions', () => {
-    it('merges expected_columns and maps golden_result to count + sample_row', async () => {
+    // The service derives the count + sample row in SQL (jsonb_array_length /
+    // ->0), so the stubbed DB rows carry those columns — NOT the full
+    // golden_result, which is never fetched into Node (#18).
+    it('merges expected_columns and maps the SQL-derived count + sample_row', async () => {
       const rows = [
         {
           code: 'Q5',
           title: 'Products per category',
           prompt: 'P',
           ordered: false,
-          golden_result: [
-            ['Books', '12'],
-            ['Toys', '7'],
-          ],
+          expected_row_count: 2,
+          sample_row: ['Books', '12'],
         },
       ];
       const db = makeDb(() => ({ rows }));
@@ -40,17 +41,35 @@ describe('ArenaService', () => {
       assert.deepEqual(q.sample_row, ['Books', '12']);
     });
 
-    it('exposes ONLY the first golden row, never the full golden_result', async () => {
+    it('derives count + sample in SQL — never SELECTs the full golden_result', async () => {
+      let sql = '';
+      const db = makeDb((text) => {
+        sql = text;
+        return { rows: [] };
+      });
+      const svc = new ArenaService(db);
+      await svc.listQuestions();
+      const compact = sql.replace(/\s+/g, ' ');
+      assert.match(compact, /jsonb_array_length\(golden_result\)/);
+      assert.match(compact, /golden_result->0/);
+      // The bare full array must not be selected (that was the perf/leak risk).
+      assert.doesNotMatch(
+        compact,
+        /SELECT[^;]*\bgolden_result\b(?!->0|\))/,
+        'must not SELECT the full golden_result column',
+      );
+      assert.doesNotMatch(compact, /reference_query/);
+    });
+
+    it('exposes only the sample row, never the full golden_result, in the output', async () => {
       const rows = [
         {
           code: 'Q5',
           title: 'T',
           prompt: 'P',
           ordered: false,
-          golden_result: [
-            ['Books', '12'],
-            ['secret-second-row', '999'],
-          ],
+          expected_row_count: 2,
+          sample_row: ['Books', '12'],
         },
       ];
       const db = makeDb(() => ({ rows }));
@@ -63,22 +82,18 @@ describe('ArenaService', () => {
           'should not include reference_query',
         );
       }
-      // The hidden rows must not appear anywhere in the serialised response.
-      const serialised = JSON.stringify(result);
-      assert.ok(
-        !serialised.includes('secret-second-row'),
-        'must not leak rows beyond the first',
-      );
     });
 
-    it('returns null sample_row and count 0 for an empty golden result', async () => {
+    it('returns null sample_row and count 0 for an empty/absent golden result', async () => {
+      // jsonb_array_length(NULL) and golden_result->0 on [] both yield SQL NULL.
       const rows = [
         {
           code: 'Q8',
           title: 'Low-stock',
           prompt: 'P',
           ordered: false,
-          golden_result: [],
+          expected_row_count: null,
+          sample_row: null,
         },
       ];
       const db = makeDb(() => ({ rows }));

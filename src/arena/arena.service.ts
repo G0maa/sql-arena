@@ -60,31 +60,37 @@ export class ArenaService {
   async listQuestions(): Promise<QuestionSummary[]> {
     const client = await this.db.getRwPool().connect();
     try {
+      // Derive the row count and the single sample row in SQL — never fetch the
+      // full golden_result into Node. Q6's golden alone is ~632k rows; pulling
+      // and parsing the whole array just to read .length and [0] made every
+      // page load sluggish (#18). jsonb_array_length / ->0 give exactly the two
+      // values the output-format hint needs, and ->0 also enforces the no-leak
+      // invariant at the source (only the first row ever leaves the DB).
       const res = await client.query<{
         code: string;
         title: string;
         prompt: string;
         ordered: boolean;
-        golden_result: (string | null)[][] | null;
+        expected_row_count: number | null;
+        sample_row: (string | null)[] | null;
       }>(
-        `SELECT code, title, prompt, ordered, golden_result
+        `SELECT code, title, prompt, ordered,
+                jsonb_array_length(golden_result) AS expected_row_count,
+                golden_result->0               AS sample_row
            FROM app.questions
           ORDER BY code`,
       );
-      // Map to the public summary: expose only the FIRST golden row as a format
-      // hint and the row count — never the full golden_result.
-      return res.rows.map((r) => {
-        const golden = r.golden_result ?? [];
-        return {
-          code: r.code,
-          title: r.title,
-          prompt: r.prompt,
-          ordered: r.ordered,
-          expected_columns: EXPECTED_COLUMNS[r.code] ?? [],
-          expected_row_count: golden.length,
-          sample_row: golden.length > 0 ? golden[0] : null,
-        };
-      });
+      // Both derived fields are null when golden_result is NULL (question not
+      // loaded); an empty golden ([]) yields count 0 + a null sample row.
+      return res.rows.map((r) => ({
+        code: r.code,
+        title: r.title,
+        prompt: r.prompt,
+        ordered: r.ordered,
+        expected_columns: EXPECTED_COLUMNS[r.code] ?? [],
+        expected_row_count: r.expected_row_count ?? 0,
+        sample_row: r.sample_row ?? null,
+      }));
     } finally {
       client.release();
     }
