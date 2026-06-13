@@ -20,7 +20,17 @@ function makeService(overrides: Partial<ArenaService> = {}): ArenaService {
 describe('ArenaController', () => {
   describe('listQuestions', () => {
     it('delegates to service', async () => {
-      const questions = [{ code: 'q1', title: 'T', prompt: 'P' }];
+      const questions = [
+        {
+          code: 'q1',
+          title: 'T',
+          prompt: 'P',
+          ordered: false,
+          expected_columns: ['a'],
+          expected_row_count: 1,
+          sample_row: ['x'],
+        },
+      ];
       const svc = makeService({
         listQuestions: mock.fn(async () => questions),
       });

@@ -57,6 +57,82 @@
           grid-template-columns: 1.4fr 1fr;
         }
       }
+      .full {
+        grid-column: 1 / -1;
+      }
+      .erd-wrap {
+        overflow-x: auto;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        background: #0f172a;
+      }
+      .erd-wrap img {
+        display: block;
+        width: 100%;
+        min-width: 720px;
+        height: auto;
+      }
+      .panel h2 .hint {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 0.82rem;
+      }
+      .expected {
+        margin-bottom: 1rem;
+      }
+      .expected .meta {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 0.4rem;
+      }
+      .expected .meta strong {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .expected .tag {
+        display: inline-block;
+        background: rgba(125, 211, 252, 0.12);
+        color: var(--accent);
+        border-radius: 3px;
+        padding: 0.05rem 0.4rem;
+        margin-left: 0.35rem;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      .expected-table-wrap {
+        overflow-x: auto;
+        border: 1px solid #334155;
+        border-radius: 4px;
+      }
+      table.expected-table {
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+      table.expected-table th {
+        color: var(--accent);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-weight: 600;
+      }
+      table.expected-table td {
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      table.expected-table tr:last-child td {
+        border-bottom: none;
+      }
+      .expected .sample-label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        padding: 0.3rem 0.5rem 0;
+      }
+      .expected .empty-note {
+        font-size: 0.8rem;
+        color: var(--muted);
+        padding: 0.5rem;
+        border: 1px dashed #475569;
+        border-radius: 4px;
+      }
       .panel {
         background: var(--panel);
         border: 1px solid #334155;
@@ -207,6 +283,13 @@
     </header>
 
     <main>
+      <section class="panel full" aria-label="Database schema">
+        <h2>Database schema <span class="hint">— query the <code>seed</code> schema · only PKs are indexed</span></h2>
+        <div class="erd-wrap">
+          <img src="erd.svg" alt="Entity-relationship diagram of the seed schema: category, customer, product, orders, and order_details tables with their columns, types, and foreign-key relationships." />
+        </div>
+      </section>
+
       <section class="panel" aria-label="Submission">
         <h2>Your submission</h2>
 
@@ -216,6 +299,8 @@
         </div>
 
         <div class="prompt" id="prompt">Loading questions…</div>
+
+        <div class="expected" id="expected"></div>
 
         <div class="field">
           <label for="name">Display name</label>
@@ -260,6 +345,7 @@
       const els = {
         question: document.getElementById('question'),
         prompt: document.getElementById('prompt'),
+        expected: document.getElementById('expected'),
         name: document.getElementById('name'),
         setup: document.getElementById('setup'),
         solution: document.getElementById('solution'),
@@ -327,8 +413,55 @@
         const code = selectedCode();
         const q = questions.find((x) => x.code === code);
         els.prompt.textContent = q ? q.prompt : '';
+        renderExpected(q);
         loadLeaderboard(code);
         refreshSubmitEnabled();
+      }
+
+      // Output-format hint: expected columns, row count, order sensitivity, and
+      // a single sample row. Helps contestants match the exact result shape the
+      // grader compares against (it's an exact full-result match).
+      function renderExpected(q) {
+        if (!q || !q.expected_columns || q.expected_columns.length === 0) {
+          els.expected.innerHTML = '';
+          return;
+        }
+        const cols = q.expected_columns;
+        const order = q.ordered
+          ? '<span class="tag">order matters</span>'
+          : '<span class="tag">any order</span>';
+        const count =
+          typeof q.expected_row_count === 'number'
+            ? `<strong>${q.expected_row_count}</strong> row${q.expected_row_count === 1 ? '' : 's'}`
+            : '';
+
+        let body;
+        if (q.sample_row && q.sample_row.length === cols.length) {
+          const head = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('');
+          const cells = q.sample_row
+            .map(
+              (v) =>
+                `<td>${v === null ? '<span style="color:#64748b">NULL</span>' : escapeHtml(v)}</td>`,
+            )
+            .join('');
+          body =
+            `<div class="sample-label">sample row (the rest of the answer is hidden)</div>` +
+            `<table class="expected-table"><thead><tr>${head}</tr></thead>` +
+            `<tbody><tr>${cells}</tr></tbody></table>`;
+        } else if (q.expected_row_count === 0) {
+          const head = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join('');
+          body =
+            `<table class="expected-table"><thead><tr>${head}</tr></thead></table>` +
+            `<div class="empty-note">The correct answer is an <strong>empty result</strong> (0 rows) for this dataset — return these columns with no rows.</div>`;
+        } else {
+          body = cols
+            .map((c) => `<span class="tag">${escapeHtml(c)}</span>`)
+            .join('');
+        }
+
+        els.expected.innerHTML =
+          `<div class="meta">Expected output: ${count} · ${cols.length} column${cols.length === 1 ? '' : 's'} ${order}</div>` +
+          `<div class="expected-table-wrap">${body}</div>`;
       }
 
       async function loadLeaderboard(code) {

@@ -1,10 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { QUESTIONS } from '../seed/questions';
+
+// code → expected output columns, sourced from the committed question registry.
+// Surfaced as an output-format hint; see AgDR-0012.
+const EXPECTED_COLUMNS: Record<string, string[]> = Object.fromEntries(
+  QUESTIONS.map((q) => [q.code, q.expected_columns]),
+);
 
 export interface QuestionSummary {
   code: string;
   title: string;
   prompt: string;
+  /** Whether row order is part of the grading contract. */
+  ordered: boolean;
+  /** Expected output columns, in order (a format hint for contestants). */
+  expected_columns: string[];
+  /** Number of rows the correct answer has (an empty result can be correct). */
+  expected_row_count: number;
+  /**
+   * First row of the golden result as a format hint, or null when the answer
+   * is empty. Deliberately ONLY the first row — never the full golden result,
+   * which stays secret behind the isolation boundary.
+   */
+  sample_row: (string | null)[] | null;
 }
 
 export interface SubmitInput {
@@ -41,10 +60,31 @@ export class ArenaService {
   async listQuestions(): Promise<QuestionSummary[]> {
     const client = await this.db.getRwPool().connect();
     try {
-      const res = await client.query<QuestionSummary>(
-        `SELECT code, title, prompt FROM app.questions ORDER BY code`,
+      const res = await client.query<{
+        code: string;
+        title: string;
+        prompt: string;
+        ordered: boolean;
+        golden_result: (string | null)[][] | null;
+      }>(
+        `SELECT code, title, prompt, ordered, golden_result
+           FROM app.questions
+          ORDER BY code`,
       );
-      return res.rows;
+      // Map to the public summary: expose only the FIRST golden row as a format
+      // hint and the row count — never the full golden_result.
+      return res.rows.map((r) => {
+        const golden = r.golden_result ?? [];
+        return {
+          code: r.code,
+          title: r.title,
+          prompt: r.prompt,
+          ordered: r.ordered,
+          expected_columns: EXPECTED_COLUMNS[r.code] ?? [],
+          expected_row_count: golden.length,
+          sample_row: golden.length > 0 ? golden[0] : null,
+        };
+      });
     } finally {
       client.release();
     }

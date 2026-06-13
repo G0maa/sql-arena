@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
 import { ArenaService } from './arena.service';
+import { QUESTIONS } from '../seed/questions';
 
 // Minimal stub for DatabaseService
 function makeDb(
@@ -15,28 +16,89 @@ function makeDb(
 
 describe('ArenaService', () => {
   describe('listQuestions', () => {
-    it('returns code, title, prompt only', async () => {
+    it('merges expected_columns and maps golden_result to count + sample_row', async () => {
       const rows = [
-        { code: 'q1', title: 'Q1', prompt: 'Write a query' },
-        { code: 'q2', title: 'Q2', prompt: 'Another query' },
+        {
+          code: 'Q5',
+          title: 'Products per category',
+          prompt: 'P',
+          ordered: false,
+          golden_result: [
+            ['Books', '12'],
+            ['Toys', '7'],
+          ],
+        },
+      ];
+      const db = makeDb(() => ({ rows }));
+      const svc = new ArenaService(db);
+      const [q] = await svc.listQuestions();
+      assert.equal(q.code, 'Q5');
+      assert.equal(q.ordered, false);
+      // expected_columns comes from the committed registry, not the DB row
+      assert.deepEqual(q.expected_columns, ['category_name', 'product_count']);
+      assert.equal(q.expected_row_count, 2);
+      assert.deepEqual(q.sample_row, ['Books', '12']);
+    });
+
+    it('exposes ONLY the first golden row, never the full golden_result', async () => {
+      const rows = [
+        {
+          code: 'Q5',
+          title: 'T',
+          prompt: 'P',
+          ordered: false,
+          golden_result: [
+            ['Books', '12'],
+            ['secret-second-row', '999'],
+          ],
+        },
       ];
       const db = makeDb(() => ({ rows }));
       const svc = new ArenaService(db);
       const result = await svc.listQuestions();
-      assert.deepEqual(result, rows);
-    });
-
-    it('does not leak reference_query or golden_result', async () => {
-      const rows = [{ code: 'q1', title: 'T', prompt: 'P' }];
-      const db = makeDb(() => ({ rows }));
-      const svc = new ArenaService(db);
-      const result = await svc.listQuestions();
       for (const q of result) {
+        assert.ok(!('golden_result' in q), 'should not include golden_result');
         assert.ok(
           !('reference_query' in q),
           'should not include reference_query',
         );
-        assert.ok(!('golden_result' in q), 'should not include golden_result');
+      }
+      // The hidden rows must not appear anywhere in the serialised response.
+      const serialised = JSON.stringify(result);
+      assert.ok(
+        !serialised.includes('secret-second-row'),
+        'must not leak rows beyond the first',
+      );
+    });
+
+    it('returns null sample_row and count 0 for an empty golden result', async () => {
+      const rows = [
+        {
+          code: 'Q8',
+          title: 'Low-stock',
+          prompt: 'P',
+          ordered: false,
+          golden_result: [],
+        },
+      ];
+      const db = makeDb(() => ({ rows }));
+      const svc = new ArenaService(db);
+      const [q] = await svc.listQuestions();
+      assert.equal(q.expected_row_count, 0);
+      assert.equal(q.sample_row, null);
+    });
+  });
+
+  describe('question registry (drift guard)', () => {
+    it('every question declares a non-empty, unique-coded expected_columns list', () => {
+      const codes = new Set<string>();
+      for (const q of QUESTIONS) {
+        assert.ok(
+          q.expected_columns.length > 0,
+          `${q.code} must declare expected_columns`,
+        );
+        assert.ok(!codes.has(q.code), `duplicate question code ${q.code}`);
+        codes.add(q.code);
       }
     });
   });
